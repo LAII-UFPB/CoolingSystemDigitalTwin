@@ -1,8 +1,10 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from fuzzymodel import FuzzyTSModel
+
+# import your datamanager class and the model you want to use
 from TermoDataManager import TermoDataManager
+from DigitalTwin.src.FuzzyModel import FuzzyTSModel
 
 # Dataset import
 path_to_data = os.path.join(os.path.dirname(__file__), '..', 'data')
