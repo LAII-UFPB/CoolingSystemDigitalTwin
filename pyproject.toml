@@ -1,5 +1,5 @@
 [project]
-name = "digitaltwin"
+name = "CoolingSystemDigitalTwin"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -11,3 +11,6 @@ dependencies = [
     "simpful>=2.12.0",
     "tqdm>=4.67.1",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
