@@ -210,7 +210,7 @@ class FuzzyTSModel(Model):
     def __init__(self, input_names:list, output_name:str, N:int, input_range:list, output_range:list,
                  update_rule_window:int=15,max_rules:int=None, aggregation_fun="product"):
         
-        super.__init__()
+        super().__init__()
 
         self.input_names = input_names
         self.output_name = output_name

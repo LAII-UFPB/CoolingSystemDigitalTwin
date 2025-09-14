@@ -25,7 +25,7 @@ output_name = data_out.columns[0]
 Xt, yt, Xv, yv = data_manager.split_data(data_in, data_out, train_ratio=0.8)
 
 # create the fuzzy model
-model = FuzzyTSModel(input_names=input_names, output_name=output_name, num_regions=7,
+model = FuzzyTSModel(input_names=input_names, output_name=output_name, N=7,
                           input_range=input_range, output_range=output_range)
 
 # visualizing the created variables 
