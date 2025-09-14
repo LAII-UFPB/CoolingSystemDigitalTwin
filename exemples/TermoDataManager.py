@@ -1,5 +1,5 @@
 import polars as pl
-from DataManager import DataManager
+from src.DataManager import DataManager
 
 class TermoDataManager(DataManager):
     def __init__(self, path_to_data:str=None, data_files_name:list[str]=None, verbose:bool=False) -> None:

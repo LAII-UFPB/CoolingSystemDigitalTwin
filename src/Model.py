@@ -1,7 +1,7 @@
 # model.py
 from abc import ABC, abstractmethod
 import numpy as np
-from DigitalTwin.src.ModelMetrics import ModelMetrics
+from src.ModelMetrics import ModelMetrics
 
 class Model(ABC):
     """Base class for all models."""

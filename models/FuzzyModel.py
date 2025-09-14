@@ -1,6 +1,5 @@
 import numpy as np
-from functools import reduce
-from DigitalTwin.src.Model import Model
+from src.Model import Model
 from tqdm import tqdm
 from simpful import FuzzySystem, AutoTriangle, LinguisticVariable
 

@@ -1,8 +1,9 @@
 import os
+from abc import ABC, abstractmethod
 import polars as pl
 
 
-class DataManager:
+class DataManager(ABC):
     def __init__(self, path_to_data:str=None, data_files_name:list[str]=None, load_data:bool=True, verbose:bool=False) -> None:
         self.path_to_data = path_to_data
         self.data_files_name = data_files_name
@@ -25,6 +26,7 @@ class DataManager:
                 print("has Null:", data[file_name])
         return data
 
+    @abstractmethod
     def get_data_in_out(self) -> tuple[pl.DataFrame, pl.DataFrame]:
         ''' 
         This method is intended to be overridden in subclasses.
