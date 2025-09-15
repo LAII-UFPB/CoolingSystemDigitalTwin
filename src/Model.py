@@ -23,9 +23,9 @@ class Model(ABC):
     def get_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         """Evaluate model with common regression metrics."""
         mae = self.metrics.mean_absolute_error(y_true, y_pred)
-        rmse = self.root_mean_squared_error(y_true, y_pred)
-        r2 = self.r2_score(y_true, y_pred)
-        mape = self.mean_absolute_percentage_error(y_true, y_pred)
+        rmse = self.metrics.root_mean_squared_error(y_true, y_pred)
+        r2 = self.metrics.r2_score(y_true, y_pred)
+        mape = self.metrics.mean_absolute_percentage_error(y_true, y_pred)
         return {"MAE": mae, "RMSE": rmse, "R2": r2, "MAPE": mape}
 
     def save(self, path: str):
