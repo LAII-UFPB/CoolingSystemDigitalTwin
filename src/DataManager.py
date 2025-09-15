@@ -53,7 +53,12 @@ class DataManager(ABC):
             print(f"Output saved to {output_path}")
 
     def min_max_normalization(self, df:pl.DataFrame):
-        return df.select((pl.all() - pl.all().min()) / (pl.all().max() - pl.all().min())) 
+        return df.select([
+            (pl.col(col) - pl.col(col).min())/ (pl.col(col).max() - pl.col(col).min()) for col in df.columns])
+
+    def standarization(self, df:pl.DataFrame):
+        return df.select([
+            (pl.col(col) - pl.col(col).mean()) / pl.col(col).std() for col in df.columns])
     
     def get_dataframe_range(self, df:pl.DataFrame):
         df_range_list = []
