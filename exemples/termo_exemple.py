@@ -14,24 +14,32 @@ data_manager = TermoDataManager(path_to_data, data_files_name)
 data_in, data_out = data_manager.get_data_in_out(verbose=True)
 
 # variable ranges
-input_range = [-1.5, 1.5]
-output_range = input_range
+input_ranges = data_manager.get_dataframe_range(data_in)
+output_range = data_manager.get_dataframe_range(data_out)
 
 # variable names
 input_names = data_in.columns
 output_name = data_out.columns[0]
 
+# N for each variable
+n_list = [100]*2 + [60]*7
+
 # splitting the data
 Xt, yt, Xv, yv = data_manager.split_data(data_in, data_out, train_ratio=0.8)
 
-# create the fuzzy model
-model = FuzzyTSModel(input_names=input_names, output_name=output_name, N=7,
-                          input_range=input_range, output_range=output_range)
+# create the fuzzy model (VERIFICAR O N UTILIZADO NA DISSERTAÇÃO)
+input_configs = [{"name":input_names[i],
+                   "N":n_list[i], 
+                   "range":input_ranges[i]} for i in range(len(input_names))]
+
+output_config = {"name":output_name, "N":100, "range":output_range[0]}
+
+model = FuzzyTSModel(input_configs=input_configs, output_config=output_config) 
 
 # visualizing the created variables 
 # here we visualize only the first input variable 
 # we are checking the pertinence values for the input 0.5
-#var1 = model.var_manager.get('var1')
+#var1 = model.var_manager.get(input_names[0])
 #for term, value in var1.get_values(0.5).items():
 #    print(term, ':',value)
 #
@@ -39,7 +47,7 @@ model = FuzzyTSModel(input_names=input_names, output_name=output_name, N=7,
 #var1.plot()
 #
 ## model train
-#model.fit(Xt, yt)
+model.fit(Xt, yt)
 #
 ### model prediction
 #y_pred = model.predict(Xv)
@@ -50,4 +58,4 @@ model = FuzzyTSModel(input_names=input_names, output_name=output_name, N=7,
 #plt.show()
 #
 ## Learned rules
-#print(model.explain())
+print(model.explain())
