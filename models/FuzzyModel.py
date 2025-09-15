@@ -5,58 +5,54 @@ from simpful import FuzzySystem, AutoTriangle, LinguisticVariable
 
 
 class FuzzyVariableManager:
-    """Manages fuzzy variables (inputs and outputs)."""
+    """Manages fuzzy variables (inputs and outputs) with custom N and range."""
 
-    def __init__(self, N:int, input_range:list, output_range:list):
-        """
-        Args:
-            N (int): Number of fuzzy sets per variable (total sets = 2*N + 1)
-            input_range (list): [min, max] range for input variables
-            output_range (list): [min, max] range for output variable
-        """
-        assert N > 0, "N must be greater than 0"
-        assert len(input_range) == 2 and input_range[0] < input_range[1], \
-            "input_range must be [min, max] with min < max"
-        assert len(output_range) == 2 and output_range[0] < output_range[1], \
-            "output_range must be [min, max] with min < max"
-        
-        self.N = N
-        self.input_range = input_range
-        self.output_range = output_range
+    def __init__(self):
         self.variables = {}
 
-    def create_variable(self, name: str, is_output: bool =False) -> LinguisticVariable:
+    def create_variable(self, name: str, N:int, var_range:list, is_output: bool=False) -> LinguisticVariable:
         """
         Create fuzzy variable based on Auto Triangle and convert to Linguistic Variable.
+
         Args:
-            name (str): variable name
-            is_output (bool): whether variable is output
+            name (str): Variable name
+            N (int): Number of fuzzy sets (total sets = 2*N + 1)
+            var_range (list): [min, max] universe of discourse for this variable
+            is_output (bool): Whether variable is output
         """
-        universe = self.output_range if is_output else self.input_range
-        regions = 2 * self.N + 1
+        assert N > 0, "N must be greater than 0"
+        assert len(var_range) == 2 and var_range[0] < var_range[1], \
+            f"var_range must be [min, max] with min < max! VarName:{name}"
+
+        regions = 2 * N + 1
 
         # region names (S=small, B=big, Z=zero)
         terms = []
         for i in range(regions):
-            if i < self.N:
-                terms.append(f"S{abs(i - self.N)}")
-            elif i > self.N:
-                terms.append(f"B{abs(i - self.N)}")
+            if i < N:
+                terms.append(f"S{abs(i - N)}")
+            elif i > N:
+                terms.append(f"B{abs(i - N)}")
             else:
                 terms.append("Z")
 
         auto = AutoTriangle(
             n_sets=regions,
             terms=terms,
-            universe_of_discourse=universe
+            universe_of_discourse=var_range
         )
 
-        lv = LinguisticVariable(auto._FSlist, concept=name, universe_of_discourse=universe)
-        self.variables[name] = lv
+        lv = LinguisticVariable(auto._FSlist, concept=name, universe_of_discourse=var_range)
+        self.variables[name] = {
+            "lv": lv,
+            "N": N,
+            "range": var_range,
+            "is_output": is_output
+        }
         return lv
 
     def get(self, name:str) -> LinguisticVariable:
-        return self.variables[name]
+        return self.variables[name]["lv"]
 
 
 class FuzzyRuleManager:
@@ -64,16 +60,6 @@ class FuzzyRuleManager:
 
     def __init__(self, prune_weight_threshold:float=0.1, prune_use_threshold:int=0,
                  prune_window:int=15, update_rule_window:int=15,max_rules:int=None, aggregation_fun="product"):
-        """
-        Args:
-            prune_weight_threshold (float): Minimum weight for a rule to be considered used.
-            prune_use_threshold (int): Minimum number of uses for a rule to be retained.
-            prune_window (int): Number of predictions after which to evaluate rule usage.
-            update_rule_window (int): Number of samples after which to consider adding new rules.
-            max_rules (int): Maximum number of rules to store. None = unlimited.
-            aggregation_fun (str or callable): Aggregation function for pertinence values
-                                               ("product", "min", "max", "arit_mean" or callable).
-        """
 
         self.rules = []
         self.weights = []
@@ -204,24 +190,34 @@ class FuzzyRuleManager:
             self.prune_count += 1
             return False
 
+
 class FuzzyTSModel(Model):
     """Fuzzy model for time series forecasting with adaptive rule management."""
 
-    def __init__(self, input_names:list, output_name:str, N:int, input_range:list, output_range:list,
+    def __init__(self, input_configs:list[dict], output_config:dict,
                  update_rule_window:int=15,max_rules:int=None, aggregation_fun="product"):
-        
+        """
+        Args:
+            input_configs (list of dict): [{"name": str, "N": int, "range": [min,max]}, ...]
+            output_config (dict): {"name": str, "N": int, "range": [min,max]}
+        """
         super().__init__()
 
-        self.input_names = input_names
-        self.output_name = output_name
-        self.var_manager = FuzzyVariableManager(N, input_range, output_range)
+        self.input_names = [cfg["name"] for cfg in input_configs]
+        self.output_name = output_config["name"]
+        self.var_manager = FuzzyVariableManager()
         self.rule_manager = FuzzyRuleManager(max_rules=max_rules, update_rule_window=update_rule_window,
                                              aggregation_fun=aggregation_fun)
         self.fs = FuzzySystem(show_banner=False)
 
         # Create variables
-        self.input_vars = [self.var_manager.create_variable(name) for name in input_names]
-        self.output_var = self.var_manager.create_variable(output_name, is_output=True)
+        self.input_vars = [
+            self.var_manager.create_variable(cfg["name"], cfg["N"], cfg["range"])
+            for cfg in input_configs
+        ]
+        self.output_var = self.var_manager.create_variable(
+            output_config["name"], output_config["N"], output_config["range"], is_output=True
+        )
 
         # Add variables to fuzzy system
         self.fs.add_linguistic_variable(self.output_name, self.output_var)
