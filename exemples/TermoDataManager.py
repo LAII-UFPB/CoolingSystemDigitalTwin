@@ -47,12 +47,12 @@ class TermoDataManager(DataManager):
         
         # we'll apply normalization to all but NumVentOn data
         num_vent_on = data_in[["NumVentOn"]]
-        data_in_norm = self.min_max_normalization(data_in.drop("NumVentOn"))
+        data_in_norm = self.standarization(data_in.drop("NumVentOn"))
         data_in = pl.concat([data_in_norm, num_vent_on], how="horizontal")
-        data_out = self.min_max_normalization(data_out)
+        data_out = self.standarization(data_out)
 
         if self.verbose or verbose:
-            print("\n========== after min_max normalization ==========")
+            print("\n========== after normalization ==========")
             self.print_input_output_range(data_in, data_out)        
 
         return data_in, data_out   
