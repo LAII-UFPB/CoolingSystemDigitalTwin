@@ -68,7 +68,7 @@ model.fit(Xt, yt)
 # saving the model
 model_name = 'fuzzyTS_sin_exemple'
 path_to_save = os.path.join(os.getcwd(), 'exemples', 'saved_fuzzy_models')
-os.makedirs(path_to_save)
+os.makedirs(path_to_save, exist_ok=True)
 path_to_save = os.path.join(path_to_save, model_name)
 model.save(path_to_save)
 
@@ -84,17 +84,23 @@ model.rule_manager.prune_window = 25
 
 # model prediction
 y_pred = model.predict_and_update(Xv, y_true=yv, abs_error_threshold=0.01)
+error = model.metrics.absolute_percentage_error(yv, y_pred)
 
-plt.title("Validation data: Real vs Fuzzy Predicted")
-plt.plot(yv, label="Real")
-plt.plot(y_pred, label="Fuzzy Pred")
-plt.grid()
+fig, ax = plt.subplots(2,1)
+fig.suptitle("Validation data: Real vs Fuzzy Predicted")
+ax[0].plot(yv, label="Real")
+ax[0].plot(y_pred, label="Fuzzy Pred")
+ax[0].grid(True)
+ax[1].plot(error)
+ax[1].set_ylabel("abs error %")
+ax[1].grid(True)
 plt.legend()
 plt.show()
 
 # Metrics
 results = model.get_score(y_pred=y_pred, y_true=yv)
 print(f"MAE: {results['MAE']}\nMAPE: {results['MAPE']}\nRMSE: {results['RMSE']}\nR2: {results['R2']}")
+
 
 # Learned rules
 #print(model.explain())
