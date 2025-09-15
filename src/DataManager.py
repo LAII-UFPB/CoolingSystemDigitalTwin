@@ -55,15 +55,15 @@ class DataManager(ABC):
     def min_max_normalization(self, df:pl.DataFrame):
         return df.select((pl.all() - pl.all().min()) / (pl.all().max() - pl.all().min())) 
     
-    def dataframe_range(self, df:pl.DataFrame):
+    def get_dataframe_range(self, df:pl.DataFrame):
         df_range_list = []
         for col in df.columns:
             df_range_list.append((df[col].min(), df[col].max()))
         return df_range_list
     
     def print_input_output_range(self, data_in:pl.DataFrame, data_out:pl.DataFrame) -> None:
-        input_range = self.dataframe_range(data_in)
-        output_range = self.dataframe_range(data_out)
+        input_range = self.get_dataframe_range(data_in)
+        output_range = self.get_dataframe_range(data_out)
 
         print(f"=========== data_in ===========:\n", data_in.head())
         print("input range:")
