@@ -61,7 +61,7 @@ class FuzzyRuleManager:
 
     def __init__(self, prune_weight_threshold:float=0.1, prune_use_threshold:int=0,
                  prune_window:int=15, update_rule_window:int=15,max_rules:int=None, 
-                 aggregation_fun="product", logger:...=None):
+                 aggregation_fun="product", logger=None):
 
         self.rules = []
         self.weights = []
@@ -77,7 +77,7 @@ class FuzzyRuleManager:
         self.aggregation_fun = aggregation_fun
 
         self.logger = logger
-        self.lv = 6
+        self.lv = 20
 
         assert self.prune_window > self.prune_use_threshold, \
             "prune_window must be greater than prune_use_threshold"
@@ -147,7 +147,7 @@ class FuzzyRuleManager:
             else:
                 #tqdm.write(f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.", end='\r')
                 if self.logger:
-                    self.logger.log(self.lv, f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.", end='\r')
+                    self.logger.log(self.lv, f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.")
                 self.rules.append(new_rule)
                 self.weights.append(new_weight)
                 self.usage_count.append(0)
@@ -173,36 +173,52 @@ class FuzzyRuleManager:
 
     def prune_unused_rules(self) -> bool:
         """
-        Remove unused or low-impact rules based on sliding window.
-        Returns True if pruning occurred.
+        Remove unused or low-impact rules based on a sliding window mechanism.
+        Returns True if pruning occurred, False otherwise.
+
+        A rule is removed if:
+        - Its usage count is below or equal to `prune_use_threshold`
+        - AND its average error contribution is below `prune_weight_threshold`
+
+        The pruning is triggered every `prune_window` calls.
         """
         if self.prune_count >= self.prune_window:
-            to_remove = []
+            to_remove: list[int] = []
+
             for i, count in enumerate(self.usage_count):
                 avg_error = self.error_contribution[i] / max(1, count)
                 if count <= self.prune_use_threshold and avg_error < self.prune_weight_threshold:
                     to_remove.append(i)
 
-            if len(to_remove) > 0:
-                #tqdm.write(f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
-                #            f"-> {len(self.rules) - len(to_remove)} remaining.")
-                self.log(f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
-                            f"-> {len(self.rules) - len(to_remove)} remaining.")
-                for idx in sorted(to_remove, reverse=True):
-                    del self.rules[idx]
-                    del self.weights[idx]
-                    del self.usage_count[idx]
-                    del self.error_contribution[idx]
+            if to_remove:
+                if self.logger:
+                    self.logger.log(
+                        self.lv,
+                        f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
+                        f"-> {len(self.rules) - len(to_remove)} remaining."
+                    )
 
-            # Reset usage counters after pruning
+                # Delete rules and associated metadata safely (backwards to keep indices valid)
+                for idx in sorted(to_remove, reverse=True):
+                    if idx < len(self.rules):
+                        del self.rules[idx]
+                    if idx < len(self.weights):
+                        del self.weights[idx]
+                    if idx < len(self.usage_count):
+                        del self.usage_count[idx]
+                    if idx < len(self.error_contribution):
+                        del self.error_contribution[idx]
+
+            # Reset counters after pruning
             self.usage_count = [0 for _ in self.rules]
             self.error_contribution = [0.0 for _ in self.rules]
             self.prune_count = 0
             return True
+
         else:
+            # Increment prune counter until next pruning step
             self.prune_count += 1
             return False
-
 
 class FuzzyTSModel(Model):
     """Fuzzy model for time series forecasting with adaptive rule management."""
@@ -321,7 +337,10 @@ class FuzzyTSModel(Model):
 
             self.rule_manager.register_rule_usage(prediction_error=error)
             if self.rule_manager.prune_unused_rules():
-                assert len(self.rule_manager.rules) > 0, "All rules were pruned. Adjust pruning parameters."
+                if not len(self.rule_manager.rules) > 0:
+                    msg = "All rules were pruned. Adjust pruning parameters."
+                    self.log(msg, level=40)
+                    raise RuntimeError(msg)
                 self.fs._rules.clear()
                 self.fs.add_rules(self.rule_manager.rules)
         
