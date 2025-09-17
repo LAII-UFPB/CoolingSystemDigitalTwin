@@ -1,5 +1,6 @@
 import numpy as np
 from src.Model import Model
+import pickle
 from tqdm import tqdm
 from simpful import FuzzySystem, AutoTriangle, LinguisticVariable
 
@@ -59,7 +60,8 @@ class FuzzyRuleManager:
     """Manages a fuzzy rule base with adaptive learning and forgetting."""
 
     def __init__(self, prune_weight_threshold:float=0.1, prune_use_threshold:int=0,
-                 prune_window:int=15, update_rule_window:int=15,max_rules:int=None, aggregation_fun="product"):
+                 prune_window:int=15, update_rule_window:int=15,max_rules:int=None, 
+                 aggregation_fun="product", logger:...=None):
 
         self.rules = []
         self.weights = []
@@ -73,6 +75,9 @@ class FuzzyRuleManager:
         self.update_rule_window = update_rule_window
         self.max_rules = max_rules
         self.aggregation_fun = aggregation_fun
+
+        self.logger = logger
+        self.lv = 6
 
         assert self.prune_window > self.prune_use_threshold, \
             "prune_window must be greater than prune_use_threshold"
@@ -128,15 +133,21 @@ class FuzzyRuleManager:
         if not any(new_rule[:new_rule.find('THEN')] in item for item in self.rules) or len(self.rules) == 0:
             # Check maximum rules limit
             if self.max_rules is not None and len(self.rules) >= self.max_rules:
-                tqdm.write(f"Replacing rule {idx}: old_weight = {self.weights[idx]} -> new_weight = {new_weight}.")
+                #tqdm.write(f"Replacing rule {idx}: old_weight = {self.weights[idx]} -> new_weight = {new_weight}.")
                 # Replace weakest rule
                 idx = np.argmin(self.weights)
+                
+                if self.logger:
+                    self.logger.log(self.lv, f"Replacing rule {idx}: old_weight = {self.weights[idx]} -> new_weight = {new_weight}.")
+                
                 self.rules[idx] = new_rule
                 self.weights[idx] = new_weight
                 self.usage_count[idx] = 0
                 self.error_contribution[idx] = 0.0
             else:
-                tqdm.write(f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.", end='\r')
+                #tqdm.write(f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.", end='\r')
+                if self.logger:
+                    self.logger.log(self.lv, f"Add new rule: now the fuzzy uses {len(self.rules)+1} rules.", end='\r')
                 self.rules.append(new_rule)
                 self.weights.append(new_weight)
                 self.usage_count.append(0)
@@ -173,7 +184,9 @@ class FuzzyRuleManager:
                     to_remove.append(i)
 
             if len(to_remove) > 0:
-                tqdm.write(f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
+                #tqdm.write(f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
+                #            f"-> {len(self.rules) - len(to_remove)} remaining.")
+                self.log(f"Pruning {len(to_remove)} rules out of {len(self.rules)} "
                             f"-> {len(self.rules) - len(to_remove)} remaining.")
                 for idx in sorted(to_remove, reverse=True):
                     del self.rules[idx]
@@ -203,11 +216,20 @@ class FuzzyTSModel(Model):
         """
         super().__init__()
 
+        # it'll be useful for loading process
+        self.input_configs = input_configs
+        self.output_config = output_config
+        self.update_rule_window = update_rule_window
+        self.max_rules = max_rules
+        self.aggregation_fun = aggregation_fun
+
+
         self.input_names = [cfg["name"] for cfg in input_configs]
         self.output_name = output_config["name"]
         self.var_manager = FuzzyVariableManager()
+
         self.rule_manager = FuzzyRuleManager(max_rules=max_rules, update_rule_window=update_rule_window,
-                                             aggregation_fun=aggregation_fun)
+                                             aggregation_fun=aggregation_fun, logger=self.logger)
         self.fs = FuzzySystem(show_banner=False)
 
         # Create variables
@@ -227,6 +249,14 @@ class FuzzyTSModel(Model):
         # Useful for adaptive pruning
         self.X_train_dim = None
 
+        # Return some logs
+        self.log("FuzzyTSModel initialized.")
+        self.log(f"Input variables: {self.input_names}")
+        self.log(f"Output variable: {self.output_name}")
+        self.log(f"Number of sets (N), range per variable:")
+        for cfg in input_configs:
+            self.log(f"{cfg['name']}: N={cfg['N']}, range={cfg['range']}")
+
     def fit(self, X:np.ndarray, y:np.ndarray) -> None:
         """Batch learning of fuzzy rules from dataset."""
         X = np.asarray(X)
@@ -235,12 +265,16 @@ class FuzzyTSModel(Model):
         assert X.shape[0] == y.shape[0], "X and y must have same first dimension"
         self.X_train_dim = X.shape
         
+        self.log(f"Starting training with {X.shape[0]} samples and {X.shape[1]} input variables.")
+
         for xi, yi in tqdm(zip(X, y), total=X.shape[0], desc="Fitting model"):
             values_io = list(xi) + [yi]
             self.rule_manager.update_rules(self.input_vars, self.output_var, values_io,
                                            self.input_names + [self.output_name])
         self.fs.add_rules(self.rule_manager.rules)
         self.is_fitted = 1
+
+        self.log(f"Training completed. Learned {len(self.rule_manager.rules)} rules.")
 
     def partial_fit(self, xi:np.ndarray, yi:float) -> None:
         """
@@ -261,7 +295,15 @@ class FuzzyTSModel(Model):
         Predict output for given input data.
         Optionally receives y_true to track error contribution for pruning.
         """
+
+        if not self.is_fitted:
+            self.log("Prediction aborted: model is not fitted.", level="WARNING")
+            raise RuntimeError("Model must be fitted before prediction.")
+        
+        X = np.asarray(X)
         assert X.shape[1:] == self.X_train_dim[1:], "Input shape mismatch"
+        
+        self.log(f"Starting prediction for {X.shape[0]} samples.")
         
         predictions = []
         for idx, xi in enumerate(tqdm(X, total=X.shape[0], desc="Predicting")):
@@ -283,11 +325,17 @@ class FuzzyTSModel(Model):
                 self.fs._rules.clear()
                 self.fs.add_rules(self.rule_manager.rules)
         
+        self.log("Prediction completed.")
         return np.array(predictions)
 
     def explain(self) -> list[str]:
         """Return current rule base as list of strings."""
-        return self.rule_manager.rules
+        rules = self.rule_manager.rules
+        if not rules:
+            self.log("No rules available to explain.", level="WARNING")
+            return ["No rules learned."]
+        self.log(f"Explaining {len(rules)} learned rules.")
+        return [str(r) for r in rules]
 
     def predict_and_update(self, X: np.ndarray, y_true: np.ndarray=None,
                        abs_error_threshold: float=0.05, rel_error_threshold: float=None,
@@ -343,20 +391,43 @@ class FuzzyTSModel(Model):
 
         return y_pred
 
+    def save(self, filepath: str):
+        """Save model to file (pickle)."""
+        state = {
+            "input_configs": self.input_configs,
+            "output_config": self.output_config,
+            "update_rule_window": self.update_rule_window,
+            "max_rules": self.max_rules,
+            "aggregation_fun": self.aggregation_fun,
+            "rules": self.rule_manager.rules,
+            "is_fitted": self.is_fitted,
+            "X_train_dim": self.X_train_dim
+        }
+        with open(filepath, "wb") as f:
+            pickle.dump(state, f)
+        self.log(f"Model saved to {filepath}")
 
-    # Colocar como método de classe??
-    def save(self, path:str) -> None:
-        """Save rules and weights to file."""
-        np.savez(path, rules=self.rule_manager.rules,
-                       weights=self.rule_manager.weights,
-                       usage=self.rule_manager.usage_count)
+    @classmethod
+    def load(cls, filepath: str, **kwargs):
+        """Load model from file and rebuild."""
+        with open(filepath, "rb") as f:
+            state = pickle.load(f)
 
-    def load(self, path:str) -> None:
-        """Load rules and weights from file."""
-        data = np.load(path, allow_pickle=True)
-        self.rule_manager.rules = data["rules"].tolist()
-        self.rule_manager.weights = data["weights"].tolist()
-        self.rule_manager.usage_count = data["usage"].tolist()
-        self.rule_manager.error_contribution = [0.0 for _ in self.rule_manager.rules]
-        self.fs._rules.clear()
-        self.fs.add_rules(self.rule_manager.rules)
+        # recreate the model with stored params
+        model = cls(
+            input_configs=state["input_configs"],
+            output_config=state["output_config"],
+            update_rule_window=state["update_rule_window"],
+            max_rules=state["max_rules"],
+            aggregation_fun=state["aggregation_fun"],
+            **kwargs
+        )
+
+        # restore rules
+        model.rule_manager.rules = state["rules"]
+        model.fs.add_rules(model.rule_manager.rules)
+        model.is_fitted = state["is_fitted"]
+        model.X_train_dim = state["X_train_dim"]
+
+        model.log(f"Model loaded from {filepath} with {len(model.rule_manager.rules)} rules.")
+        return model
