@@ -43,11 +43,12 @@ plt.show()
 
 # variable ranges
 input_range = [-1.5, 1.5]
-output_range = input_range
+
+input_configs = [{"name":f"var{i+1}","N":6, "range":input_range} for i in range(3)]
+output_config = {"name":"out","N":6, "range":input_range}
 
 # create the fuzzy model
-model = FuzzyTSModel(input_names=["var1", "var2", "var3"], output_name= "out", N=6, update_rule_window=50, 
-                     input_range=input_range, output_range=output_range)
+model = FuzzyTSModel(input_configs=input_configs, output_config=output_config)
 
 # visualizing the created variables 
 # here we visualize only the first input variable 
@@ -73,7 +74,7 @@ path_to_save = os.path.join(path_to_save, model_name)
 model.save(path_to_save)
 
 # loading model
-path_to_load = path_to_save+'.npz'
+path_to_load = path_to_save
 model.load(path_to_load)
 #################################################################################################
 
@@ -83,7 +84,7 @@ model.rule_manager.prune_use_threshold = 2
 model.rule_manager.prune_window = 25
 
 # model prediction
-y_pred = model.predict_and_update(Xv, y_true=yv, abs_error_threshold=0.01)
+y_pred = model.predict(Xv)
 error = model.metrics.absolute_percentage_error(yv, y_pred)
 
 fig, ax = plt.subplots(2,1)
