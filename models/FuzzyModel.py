@@ -229,9 +229,12 @@ class FuzzyTSModel(Model):
 
     def fit(self, X:np.ndarray, y:np.ndarray) -> None:
         """Batch learning of fuzzy rules from dataset."""
+        X = np.asarray(X)
+        y = np.asarray(y).ravel()
+
         assert X.shape[0] == y.shape[0], "X and y must have same first dimension"
         self.X_train_dim = X.shape
-
+        
         for xi, yi in tqdm(zip(X, y), total=X.shape[0], desc="Fitting model"):
             values_io = list(xi) + [yi]
             self.rule_manager.update_rules(self.input_vars, self.output_var, values_io,
