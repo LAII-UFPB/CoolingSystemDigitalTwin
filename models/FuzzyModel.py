@@ -1,4 +1,5 @@
 import numpy as np
+from typing import List, Optional
 from src.Model import Model
 import pickle
 from tqdm import tqdm
@@ -116,7 +117,7 @@ class FuzzyRuleManager:
         else:
             raise Exception(f"Unknown aggregation function {self.aggregation_fun}")
 
-    def update_rules(self, input_vars: list[LinguisticVariable], output_var: LinguisticVariable,
+    def old_update_rules(self, input_vars: list[LinguisticVariable], output_var: LinguisticVariable,
                       values_io:list[float], var_names:list[str]) -> None:
         """Updates rule base (learns new rules or updates existing ones)."""
         terms_list, weight_list = [], []
@@ -159,6 +160,66 @@ class FuzzyRuleManager:
             if new_weight > old_weight:
                 self.rules[mask[0]] = new_rule
                 self.weights[mask[0]] = new_weight
+
+    def update_rules(self, input_vars: List[LinguisticVariable], output_var: LinguisticVariable,
+                     values_io: List[float], var_names: List[str]) -> None:
+        """
+        Update the fuzzy rule base with adaptive learning.
+        Only add or replace rules when the aggregated pertinence is significant.
+
+        Args:
+            input_vars (List[LinguisticVariable]): List of input fuzzy variables.
+            output_var (LinguisticVariable): Output fuzzy variable.
+            values_io (List[float]): Input and output values (inputs + output at the end).
+            var_names (List[str]): Names of input and output variables (in same order as values_io).
+        """
+        terms_list: List[str] = []
+        weight_list: List[float] = []
+
+        fuzzy_vars = input_vars + [output_var]
+        for i, var in enumerate(fuzzy_vars):
+            term, weight = self.strong_pertinence(var, values_io[i])
+            terms_list.append(term)
+            weight_list.append(weight)
+
+        norm_weights = np.array(weight_list) / (np.sum(weight_list) + 1e-12)
+        new_weight: float = self._aggregate_weights(norm_weights)
+        new_rule: str = self.build_rule(var_names[:-1], var_names[-1], terms_list)
+
+        # Check for existing antecedent
+        existing_idx: Optional[int] = None
+        for idx, r in enumerate(self.rules):
+            if new_rule[:new_rule.find('THEN')] in r:
+                existing_idx = idx
+                break
+
+        if existing_idx is not None:
+            # Update existing rule if new pertinence is higher
+            if new_weight > self.weights[existing_idx]:
+                self.rules[existing_idx] = new_rule
+                self.weights[existing_idx] = new_weight
+        else:
+            if len(self.rules) == 0:
+                # No rules yet → just add
+                self.rules.append(new_rule)
+                self.weights.append(new_weight)
+                self.usage_count.append(0)
+                self.error_contribution.append(0.0)
+            elif self.max_rules is not None and len(self.rules) >= self.max_rules:
+                # Replace weakest rule
+                idx_replace = int(np.argmin(self.weights))
+                self.rules[idx_replace] = new_rule
+                self.weights[idx_replace] = new_weight
+                self.usage_count[idx_replace] = 0
+                self.error_contribution[idx_replace] = 0.0
+            else:
+                # Add new rule
+                self.rules.append(new_rule)
+                self.weights.append(new_weight)
+                self.usage_count.append(0)
+                self.error_contribution.append(0.0)
+
+
     
     def register_rule_usage(self, prediction_error:float=None) -> None:
         """
@@ -306,7 +367,7 @@ class FuzzyTSModel(Model):
         self.fs.add_rules(self.rule_manager.rules)
         self.is_fitted = 1
 
-    def predict(self, X:np.ndarray, y_true:np.ndarray=None) -> np.ndarray:
+    def old_predict(self, X:np.ndarray, y_true:np.ndarray=None) -> np.ndarray:
         """
         Predict output for given input data.
         Optionally receives y_true to track error contribution for pruning.
@@ -346,6 +407,61 @@ class FuzzyTSModel(Model):
         
         self.log("Prediction completed.")
         return np.array(predictions)
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Predict outputs for given inputs using Mamdani inference.
+        Adaptive learning is performed only when no rules fire significantly.
+
+        Args:
+            X (np.ndarray): Input matrix of shape (n_samples, n_features)
+
+        Returns:
+            np.ndarray: Predicted outputs of shape (n_samples,)
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Model must be fitted before prediction.")
+
+        X = np.asarray(X)
+        n_samples = X.shape[0]
+        y_pred: np.ndarray = np.empty(n_samples)
+
+        for idx, xi in enumerate(tqdm(X, total=n_samples, desc="Predicting")):
+            # Set input variables
+            for name, val in zip(self.input_names, xi):
+                self.fs.set_variable(name, val)
+
+            # Compute firing strengths for all rules
+            firing_strengths = np.array(self.fs.get_firing_strengths())
+            if firing_strengths.sum() < 1e-8:
+                # No significant firing: learn a new rule with placeholder output
+                placeholder_output = 0.0
+                self.rule_manager.update_rules(
+                    self.input_vars,
+                    self.output_var,
+                    list(xi) + [placeholder_output],
+                    self.input_names + [self.output_name]
+                )
+                # Update fuzzy system rules
+                self.fs._rules.clear()
+                self.fs.add_rules(self.rule_manager.rules)
+
+            # Perform Mamdani inference
+            result = self.fs.Mamdani_inference([self.output_name])
+            y_pred[idx] = result[self.output_name]
+
+            # Register rule usage for adaptive pruning
+            self.rule_manager.register_rule_usage()
+
+            # Periodic pruning
+            if idx % self.rule_manager.prune_window == 0:
+                pruned = self.rule_manager.prune_unused_rules()
+                if pruned:
+                    self.fs._rules.clear()
+                    self.fs.add_rules(self.rule_manager.rules)
+
+        return y_pred
+
 
     def explain(self) -> list[str]:
         """Return current rule base as list of strings."""
@@ -419,6 +535,9 @@ class FuzzyTSModel(Model):
             "max_rules": self.max_rules,
             "aggregation_fun": self.aggregation_fun,
             "rules": self.rule_manager.rules,
+            "weights": self.rule_manager.weights,
+            "usage_count": self.rule_manager.usage_count,
+            "error_contribution": self.rule_manager.error_contribution,
             "is_fitted": self.is_fitted,
             "X_train_dim": self.X_train_dim
         }
@@ -444,6 +563,9 @@ class FuzzyTSModel(Model):
 
         # restore rules
         model.rule_manager.rules = state["rules"]
+        model.rule_manager.weights = state["weights"]
+        model.rule_manager.usage_count = state["usage_count"]
+        model.rule_manager.error_contribution = state["error_contribution"]
         model.fs.add_rules(model.rule_manager.rules)
         model.is_fitted = state["is_fitted"]
         model.X_train_dim = state["X_train_dim"]
