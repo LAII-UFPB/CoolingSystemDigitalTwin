@@ -367,48 +367,8 @@ class FuzzyTSModel(Model):
         self.fs.add_rules(self.rule_manager.rules)
         self.is_fitted = 1
 
-    def old_predict(self, X:np.ndarray, y_true:np.ndarray=None) -> np.ndarray:
-        """
-        Predict output for given input data.
-        Optionally receives y_true to track error contribution for pruning.
-        """
 
-        if not self.is_fitted:
-            self.log("Prediction aborted: model is not fitted.", level="WARNING")
-            raise RuntimeError("Model must be fitted before prediction.")
-        
-        X = np.asarray(X)
-        assert X.shape[1:] == self.X_train_dim[1:], "Input shape mismatch"
-        
-        self.log(f"Starting prediction for {X.shape[0]} samples.")
-        
-        predictions = []
-        for idx, xi in enumerate(tqdm(X, total=X.shape[0], desc="Predicting")):
-            for name, val in zip(self.input_names, xi):
-                self.fs.set_variable(name, val)
-            result = self.fs.inference()
-            
-            y_pred = result[self.output_name]
-            predictions.append(y_pred)
-
-            # Rule usage + adaptive pruning
-            error = None
-            if y_true is not None:
-                error = y_true[idx] - y_pred
-
-            self.rule_manager.register_rule_usage(prediction_error=error)
-            if self.rule_manager.prune_unused_rules():
-                if not len(self.rule_manager.rules) > 0:
-                    msg = "All rules were pruned. Adjust pruning parameters."
-                    self.log(msg, level=40)
-                    raise RuntimeError(msg)
-                self.fs._rules.clear()
-                self.fs.add_rules(self.rule_manager.rules)
-        
-        self.log("Prediction completed.")
-        return np.array(predictions)
-    
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def old_predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict outputs for given inputs using Mamdani inference with batch processing.
         """
@@ -425,8 +385,10 @@ class FuzzyTSModel(Model):
                 self.fs.set_variable(name, val)
 
             # Check for significant firing
-            firing_strengths = np.array(self.fs.get_firing_strengths())
-            if firing_strengths.sum() < 1e-8:
+            firing_strengths = np.array(self.fs.get_firing_strengths()).sum()
+
+            if firing_strengths < 1:
+                self.log(f"learning a new rule! -> firing_stregths sum = {firing_strengths}")
                 # Learn new rule only if no significant firing
                 placeholder_output = 0.0
                 self.rule_manager.update_rules(
@@ -444,16 +406,184 @@ class FuzzyTSModel(Model):
             y_pred[idx] = result[self.output_name]
 
             # Register rule usage
-            self.rule_manager.register_rule_usage()
-
-            # Prune only at the end of each batch (reduced frequency)
-            if (idx % self.rule_manager.prune_window) == 0:  # Reduced frequency
-                pruned = self.rule_manager.prune_unused_rules()
-                if pruned:
-                    self.fs._rules.clear()
-                    self.fs.add_rules(self.rule_manager.rules)
+            #self.rule_manager.register_rule_usage()
+            #
+            #if (idx % self.rule_manager.prune_window) == 0:  # Reduced frequency
+            #    pruned = self.rule_manager.prune_unused_rules()
+            #    if pruned:
+            #        self.fs._rules.clear()
+            #        self.fs.add_rules(self.rule_manager.rules)
 
         return y_pred
+
+
+    def predict(self, X: np.ndarray, learn_while_predicting: bool = True) -> np.ndarray:
+        """
+        Predict outputs with optional online learning during prediction.
+
+        Args:
+            X: Input data
+            learn_while_predicting: If True, learn new rules during prediction
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Model must be fitted before prediction.")
+
+        X = np.asarray(X)
+        n_samples = X.shape[0]
+        y_pred = np.empty(n_samples)
+
+        # Initialize learning buffers
+        self.recent_outputs = []
+        self.pending_new_rules = []
+
+        # Adaptive learning parameters
+        learning_active = learn_while_predicting
+        rule_creation_count = 0
+
+        for idx, xi in enumerate(tqdm(X, total=n_samples, desc="Predicting")):
+            # Set input variables
+            for name, val in zip(self.input_names, xi):
+                self.fs.set_variable(name, val)
+
+            # Perform inference first
+            result = self.fs.Mamdani_inference([self.output_name])
+            current_pred = result[self.output_name]
+            y_pred[idx] = current_pred
+
+            # Store recent output for potential learning
+            self.recent_outputs.append(current_pred)
+            if len(self.recent_outputs) > 50:  # Keep recent history
+                self.recent_outputs.pop(0)
+
+            # ONLINE LEARNING: Create rules for poorly predicted samples
+            if learning_active:
+                firing_strengths = np.array(self.fs.get_firing_strengths())
+
+                # Adaptive threshold based on rule count and performance
+                should_learn = self._should_create_rule(firing_strengths, current_pred, idx)
+
+                if should_learn:
+                    # Smart output estimation
+                    estimated_output = self._estimate_smart_output(xi, current_pred)
+
+                    # Create new rule
+                    self.rule_manager.update_rules(
+                        self.input_vars,
+                        self.output_var,
+                        list(xi) + [estimated_output],
+                        self.input_names + [self.output_name]
+                    )
+                    rule_creation_count += 1
+
+                    # Update fuzzy system periodically to avoid overhead
+                    if rule_creation_count % 10 == 0:  # Update every 10 new rules
+                        self.fs._rules.clear()
+                        self.fs.add_rules(self.rule_manager.rules)
+
+            # Lightweight pruning only 
+            if idx % 200 == 0 and len(self.rule_manager.rules) > 100:
+                self._gentle_pruning()
+
+        # Final update if rules were created
+        if rule_creation_count > 0:
+            self.fs._rules.clear()
+            self.fs.add_rules(self.rule_manager.rules)
+            if self.logger:
+                self.logger.log(20, f"Created {rule_creation_count} new rules during prediction")
+
+        return y_pred
+
+
+    def _should_create_rule(self, firing_strengths: np.ndarray, current_pred: float, sample_idx: int) -> bool:
+        """
+        Intelligent rule creation decision making.
+        """
+        if len(firing_strengths) == 0:
+            return True  # Always create first rule
+
+        max_firing = firing_strengths.max() if len(firing_strengths) > 0 else 0
+        avg_firing = firing_strengths.mean() if len(firing_strengths) > 0 else 0
+
+        # Rule 1: Very weak firing → definitely create rule
+        if max_firing < 0.2:
+            return True
+
+        # Rule 2: Moderate firing but poor coverage → consider creating
+        if max_firing < 0.5 and avg_firing < 0.1:
+            # Only create if we don't have too many rules already
+            if len(self.rule_manager.rules) < 300:
+                return True
+
+        # Rule 3: Check if this is a novel pattern
+        if self._is_novel_pattern(firing_strengths):
+            return True
+
+        return False
+
+
+    def _estimate_smart_output(self, xi: np.ndarray, current_pred: float) -> float:
+        """
+        Smart output estimation using multiple strategies.
+        """
+        # Strategy 1: Use recent outputs average (if available)
+        if len(self.recent_outputs) > 5:
+            recent_avg = np.mean(self.recent_outputs[-5:])
+            # Only use if it's reasonable (not extreme)
+            if abs(recent_avg - current_pred) < 2.0:  # Adjust threshold as needed
+                return recent_avg
+
+        # Strategy 2: Use current prediction (it's better than 0.0)
+        return current_pred
+
+
+    def _is_novel_pattern(self, firing_strengths: np.ndarray) -> bool:
+        """
+        Check if the current input pattern is novel.
+        """
+        if len(firing_strengths) == 0:
+            return True
+
+        # Pattern is novel if no single rule fires strongly
+        # and multiple rules fire weakly (indicating partial matches)
+        strong_rules = sum(1 for strength in firing_strengths if strength > 0.3)
+        weak_rules = sum(1 for strength in firing_strengths if 0.1 < strength <= 0.3)
+
+        # Novel pattern: many weak matches but no strong ones
+        return weak_rules >= 2 and strong_rules == 0
+
+
+    def _gentle_pruning(self):
+        """
+        Very gentle pruning - only remove obviously bad rules.
+        """
+        if len(self.rule_manager.rules) <= 50:  # Never prune below 50 rules
+            return False
+
+        # Only prune rules that have NEVER been used and have low weight
+        to_remove = []
+        for i, (count, weight) in enumerate(zip(self.rule_manager.usage_count, self.rule_manager.weights)):
+            if count == 0 and weight < 0.1:  # Very conservative criteria
+                to_remove.append(i)
+                if len(to_remove) >= 5:  # Max 5 rules per pruning
+                    break
+                
+        if to_remove:
+            # Remove rules (backwards to maintain indices)
+            for idx in sorted(to_remove, reverse=True):
+                if idx < len(self.rule_manager.rules):
+                    del self.rule_manager.rules[idx]
+                if idx < len(self.rule_manager.weights):
+                    del self.rule_manager.weights[idx]
+                if idx < len(self.rule_manager.usage_count):
+                    del self.rule_manager.usage_count[idx]
+                if idx < len(self.rule_manager.error_contribution):
+                    del self.rule_manager.error_contribution[idx]
+
+            self.fs._rules.clear()
+            self.fs.add_rules(self.rule_manager.rules)
+            return True
+
+        return False
 
 
     def explain(self) -> list[str]:
@@ -464,6 +594,7 @@ class FuzzyTSModel(Model):
             return ["No rules learned."]
         self.log(f"Explaining {len(rules)} learned rules.")
         return [str(r) for r in rules]
+
 
     def predict_and_update(self, X: np.ndarray, y_true: np.ndarray=None,
                        abs_error_threshold: float=0.05, rel_error_threshold: float=None,
@@ -519,6 +650,7 @@ class FuzzyTSModel(Model):
 
         return y_pred
 
+
     def save(self, filepath: str):
         """Save model to file (pickle)."""
         state = {
@@ -537,6 +669,7 @@ class FuzzyTSModel(Model):
         with open(filepath, "wb") as f:
             pickle.dump(state, f)
         self.log(f"Model saved to {filepath}")
+
 
     @classmethod
     def load(cls, filepath: str, **kwargs):
