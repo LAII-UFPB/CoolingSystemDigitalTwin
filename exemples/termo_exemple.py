@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from exemples.TermoDataManager import TermoDataManager
 from models.FuzzyModel import FuzzyTSModel
 
+MAX_RULES = 200
+N_FUZZYSETS_LIST = [10,5]
+
 def prepare_data():
     # Dataset import
     path_to_data = os.path.join(os.path.dirname(__file__), '..', 'data')
@@ -32,10 +35,11 @@ def prepare_data():
 
     # variable names
     input_names = data_in.columns
+    print(input_names)
     output_name = data_out.columns[0]
 
     # N for each variable
-    n_list = [100]*2 + [60]*7
+    n_list = [N_FUZZYSETS_LIST[0]]*2 + [N_FUZZYSETS_LIST[1]]*7
 
     # splitting the data
     Xt, yt, Xv, yv = data_manager.split_data(data_in, data_out, train_ratio=0.95)
@@ -46,11 +50,11 @@ def prepare_data():
                        "N":n_list[i], 
                        "range":input_ranges[i]} for i in range(len(input_names))]
 
-    output_config = {"name":output_name, "N":100, "range":output_range}
+    output_config = {"name":output_name, "N":N_FUZZYSETS_LIST[0], "range":output_range}
     return input_configs, output_config, Xt, yt, Xv, yv
 
 def train_save_model(input_configs, output_config, Xt, yt):
-    model = FuzzyTSModel(input_configs=input_configs, output_config=output_config, max_rules=int(1e3)) 
+    model = FuzzyTSModel(input_configs=input_configs, output_config=output_config, max_rules=int(MAX_RULES)) 
 
     ## model train
     model.fit(Xt, yt)
@@ -73,12 +77,19 @@ def load_predict_model(Xv, yv):
 
     #
     fig, ax = plt.subplots(2,1)
-    ax[0].plot(yv, label="Real")
-    ax[0].plot(y_pred, label="Fuzzy Pred")
+    ax[0].plot(yv, color='red', label="Dado Bruto")
+    ax[0].plot(y_pred, linestyle='--', color='blue', label="Simulação")
+    ax[0].set_ylims([0,1])
     ax[0].legend()
-    ax[1].plot(y_error)
-    ax[1].set_ylabel("Absolute Error")
-    plt.show()
+    ax[1].plot(y_error, linestyle='--', color='black', label="Absolute Percentual Error")
+    ax[1].set_ylims([0,100])
+    ax[1].set_ylabel("Absolute Error (%)")
+
+    # saving plot
+    img_path = os.path.join(os.getcwd(), 'exemples', 'error_figs')
+    os.makedirs(img_path, exist_ok=True)
+    img_name = f"old_fuzzy_error_{N_FUZZYSETS_LIST[0]}_{N_FUZZYSETS_LIST[1]}_max_rules{MAX_RULES}"
+    plt.savefig(os.path.join(img_path,img_name+'.png'))
     #
     ## Learned rules
     #print(model.explain())
@@ -87,4 +98,4 @@ def load_predict_model(Xv, yv):
 if __name__ == '__main__':
     input_configs, output_config, Xt, yt, Xv, yv = prepare_data()
     #train_save_model(input_configs, output_config, Xt, yt)
-    load_predict_model(Xv[:20], yv[:20])
+    load_predict_model(Xv[:2000], yv[:2000])
