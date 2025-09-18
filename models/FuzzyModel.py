@@ -236,15 +236,10 @@ class FuzzyRuleManager:
         """
         Remove unused or low-impact rules based on a sliding window mechanism.
         Returns True if pruning occurred, False otherwise.
-
-        A rule is removed if:
-        - Its usage count is below or equal to `prune_use_threshold`
-        - AND its average error contribution is below `prune_weight_threshold`
-
-        The pruning is triggered every `prune_window` calls.
         """
+        # Only prune when we've reached the window size
         if self.prune_count >= self.prune_window:
-            to_remove: list[int] = []
+            to_remove = []
 
             for i, count in enumerate(self.usage_count):
                 avg_error = self.error_contribution[i] / max(1, count)
@@ -259,7 +254,7 @@ class FuzzyRuleManager:
                         f"-> {len(self.rules) - len(to_remove)} remaining."
                     )
 
-                # Delete rules and associated metadata safely (backwards to keep indices valid)
+                # Delete rules safely (backwards to keep indices valid)
                 for idx in sorted(to_remove, reverse=True):
                     if idx < len(self.rules):
                         del self.rules[idx]
@@ -275,9 +270,7 @@ class FuzzyRuleManager:
             self.error_contribution = [0.0 for _ in self.rules]
             self.prune_count = 0
             return True
-
         else:
-            # Increment prune counter until next pruning step
             self.prune_count += 1
             return False
 
@@ -334,25 +327,32 @@ class FuzzyTSModel(Model):
         for cfg in input_configs:
             self.log(f"{cfg['name']}: N={cfg['N']}, range={cfg['range']}")
 
-    def fit(self, X:np.ndarray, y:np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Batch learning of fuzzy rules from dataset."""
         X = np.asarray(X)
         y = np.asarray(y).ravel()
-
+    
         assert X.shape[0] == y.shape[0], "X and y must have same first dimension"
         self.X_train_dim = X.shape
         
         self.log(f"Starting training with {X.shape[0]} samples and {X.shape[1]} input variables.")
-
+        self.log(f"Initial rule count: {len(self.rule_manager.rules)}")
+    
+        rules_before = len(self.rule_manager.rules)
+        
         for xi, yi in tqdm(zip(X, y), total=X.shape[0], desc="Fitting model"):
             values_io = list(xi) + [yi]
             self.rule_manager.update_rules(self.input_vars, self.output_var, values_io,
                                            self.input_names + [self.output_name])
+        
+        rules_after = len(self.rule_manager.rules)
         self.fs.add_rules(self.rule_manager.rules)
         self.is_fitted = 1
-
-        self.log(f"Training completed. Learned {len(self.rule_manager.rules)} rules.")
-
+    
+        self.log(f"Training completed. Learned {rules_after - rules_before} new rules.")
+        self.log(f"Total rules: {len(self.rule_manager.rules)}")
+        self.log(f"Rule examples: {self.rule_manager.rules[:3] if self.rule_manager.rules else 'None'}")
+    
     def partial_fit(self, xi:np.ndarray, yi:float) -> None:
         """
         Online update with a single sample (incremental learning).
@@ -410,31 +410,24 @@ class FuzzyTSModel(Model):
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
-        Predict outputs for given inputs using Mamdani inference.
-        Adaptive learning is performed only when no rules fire significantly.
-
-        Args:
-            X (np.ndarray): Input matrix of shape (n_samples, n_features)
-
-        Returns:
-            np.ndarray: Predicted outputs of shape (n_samples,)
+        Predict outputs for given inputs using Mamdani inference with batch processing.
         """
         if not self.is_fitted:
             raise RuntimeError("Model must be fitted before prediction.")
 
         X = np.asarray(X)
         n_samples = X.shape[0]
-        y_pred: np.ndarray = np.empty(n_samples)
+        y_pred = np.empty(n_samples)
 
-        for idx, xi in enumerate(tqdm(X, total=n_samples, desc="Predicting")):
+        for idx, xi in tqdm(enumerate(X), total=n_samples, desc='Predicting'):
             # Set input variables
             for name, val in zip(self.input_names, xi):
                 self.fs.set_variable(name, val)
 
-            # Compute firing strengths for all rules
+            # Check for significant firing
             firing_strengths = np.array(self.fs.get_firing_strengths())
             if firing_strengths.sum() < 1e-8:
-                # No significant firing: learn a new rule with placeholder output
+                # Learn new rule only if no significant firing
                 placeholder_output = 0.0
                 self.rule_manager.update_rules(
                     self.input_vars,
@@ -450,11 +443,11 @@ class FuzzyTSModel(Model):
             result = self.fs.Mamdani_inference([self.output_name])
             y_pred[idx] = result[self.output_name]
 
-            # Register rule usage for adaptive pruning
+            # Register rule usage
             self.rule_manager.register_rule_usage()
 
-            # Periodic pruning
-            if idx % self.rule_manager.prune_window == 0:
+            # Prune only at the end of each batch (reduced frequency)
+            if (idx % self.rule_manager.prune_window) == 0:  # Reduced frequency
                 pruned = self.rule_manager.prune_unused_rules()
                 if pruned:
                     self.fs._rules.clear()
