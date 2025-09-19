@@ -21,7 +21,7 @@ class TermoDataManager(DataManager):
             pl.sum_horizontal(pl.all().alias("power_sum"))
         ])
 
-        return power_df
+        return power_df[["power_sum"]]
     
     def get_data_in_out(self, verbose:bool=False) -> tuple[pl.DataFrame, pl.DataFrame]:
         '''

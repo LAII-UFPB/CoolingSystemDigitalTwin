@@ -92,7 +92,7 @@ def train_save_model(input_configs, output_config, Xt, yt, max_rules, test_descr
     model.fit(Xt, yt)
 
     # Save trained model
-    model_name = 'fuzzyTS_termo_exemple' + test_description
+    model_name = 'fuzzyTS_termo_exemple_onlysumpower_' + test_description
     path_to_save = os.path.join(os.getcwd(), 'exemples', 'saved_fuzzy_models')
     os.makedirs(path_to_save, exist_ok=True)
     model.save(os.path.join(path_to_save, model_name))
