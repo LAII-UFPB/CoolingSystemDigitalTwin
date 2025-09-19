@@ -36,6 +36,25 @@ class Model(ABC):
     def log(self, msg, level=logging.INFO):
         self.logger.log(level, msg)
 
+    def set_log_name(self, new_log_name, log_dir="logs"):
+        self.log_name = new_log_name
+        log_file = os.path.join(log_dir, self.log_name)
+
+        # Remove old handlers
+        for handler in list(self.logger.handlers):
+            self.logger.removeHandler(handler)
+            handler.close()
+
+        # Add new handler
+        fh = logging.FileHandler(log_file, mode="w")
+        fh.setLevel(self.logger.level)
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray):
         """Train the model on data."""
