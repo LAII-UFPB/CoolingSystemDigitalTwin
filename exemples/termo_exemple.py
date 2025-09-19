@@ -92,7 +92,7 @@ def train_save_model(input_configs, output_config, Xt, yt, max_rules, test_descr
     model.fit(Xt, yt)
 
     # Save trained model
-    model_name = 'fuzzyTS_termo_exemple_onlysumpower_' + test_description
+    model_name = 'fuzzyTS_termo_exemple' + test_description
     path_to_save = os.path.join(os.getcwd(), 'exemples', 'saved_fuzzy_models')
     os.makedirs(path_to_save, exist_ok=True)
     model.save(os.path.join(path_to_save, model_name))
@@ -105,7 +105,7 @@ def load_predict_model(Xv, yv, test_description,
     """
     # Load model
     path_to_load = os.path.join(os.getcwd(), 'exemples', 'saved_fuzzy_models',
-                                'fuzzyTS_termo_exemple_onlysumpower_' + test_description)
+                                'fuzzyTS_termo_exemple' + test_description)
     model = FuzzyTSModel.load(path_to_load)
 
     # Run prediction
@@ -164,7 +164,7 @@ def main():
 
     n_fuzzysets_list = args.n_fuzzysets
     max_rules = args.max_rules
-    data_description = "_all_data"
+    data_description = "_onlysumpower"
     test_description = f"{data_description}_FS_{n_fuzzysets_list[0]}_{n_fuzzysets_list[1]}_R_{max_rules}"
 
     # Prepare data
