@@ -174,7 +174,7 @@ def main():
         train_save_model(input_configs, output_config, Xt, yt, max_rules, test_description)
 
     # Load model and run prediction
-    load_predict_model(Xv[:2000], yv[:2000], n_fuzzysets_list, max_rules, test_description)
+    load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description)
 
 
 if __name__ == '__main__':
