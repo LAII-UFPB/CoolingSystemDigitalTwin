@@ -60,7 +60,7 @@ def prepare_data(n_fuzzysets_list):
     output_name = data_out.columns[0]
 
     # Assign N for each variable
-    n_list = [n_fuzzysets_list[0]] * 2 + [n_fuzzysets_list[1]] * 7
+    n_list = [n_fuzzysets_list[0]] * 2 + [n_fuzzysets_list[1]] * 2
 
     # Split data
     Xt, yt, Xv, yv = data_manager.split_data(data_in, data_out, train_ratio=0.95)
@@ -105,7 +105,7 @@ def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description,
     """
     # Load model
     path_to_load = os.path.join(os.getcwd(), 'exemples', 'saved_fuzzy_models',
-                                'fuzzyTS_termo_exemple' + test_description)
+                                'fuzzyTS_termo_exemple_onlysumpower_' + test_description)
     model = FuzzyTSModel.load(path_to_load)
 
     # Run prediction
