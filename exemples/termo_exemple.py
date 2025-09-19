@@ -85,7 +85,8 @@ def train_save_model(input_configs, output_config, Xt, yt, max_rules, test_descr
                          max_rules=int(max_rules))
 
     # Modify log name to include test description
-    model.log_name = model.log_name.split('_')[0] + test_description + "_".join(model.log_name.split('_')[1:])
+    new_log_name = model.log_name.split('_')[0] + test_description + "_".join(model.log_name.split('_')[1:])
+    model.set_log_name(new_log_name)
 
     # Train model
     model.fit(Xt, yt)
