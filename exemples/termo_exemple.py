@@ -39,7 +39,7 @@ def prepare_data(n_fuzzysets_list):
     data_in, data_out = data_manager.get_data_in_out(verbose=True)
 
     # For quick testing, use only the first 5% of data
-    use_data_percentage = 0.05
+    use_data_percentage = 1
     nb_of_samples = int(data_in.shape[0] * use_data_percentage)
     print(f"Using only {nb_of_samples} of {data_in.shape[0]} samples")
     data_in = data_in[:nb_of_samples]
@@ -60,7 +60,7 @@ def prepare_data(n_fuzzysets_list):
     output_name = data_out.columns[0]
 
     # Assign N for each variable
-    n_list = [n_fuzzysets_list[0]] * 2 + [n_fuzzysets_list[1]] * 7
+    n_list = [n_fuzzysets_list[0]] * 2 + [n_fuzzysets_list[1]] * 6
 
     # Split data
     Xt, yt, Xv, yv = data_manager.split_data(data_in, data_out, train_ratio=0.95)
@@ -98,7 +98,7 @@ def train_save_model(input_configs, output_config, Xt, yt, max_rules, test_descr
     model.save(os.path.join(path_to_save, model_name))
 
 
-def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description,
+def load_predict_model(Xv, yv, test_description,
                         csv_path=os.path.join("exemples","results.csv")):
     """
     Load model, run prediction and save error plots.
@@ -146,7 +146,7 @@ def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description,
     # Save plot
     img_path = os.path.join(os.getcwd(), 'exemples', 'error_figs')
     os.makedirs(img_path, exist_ok=True)
-    img_name = f"fuzzy_error_FS{n_fuzzysets_list[0]}_{n_fuzzysets_list[1]}_R{max_rules}"
+    img_name = f"fuzzy_erro_{test_description}"
     plt.savefig(os.path.join(img_path, img_name + '.png'))
 
 
@@ -164,7 +164,8 @@ def main():
 
     n_fuzzysets_list = args.n_fuzzysets
     max_rules = args.max_rules
-    test_description = f"_FS_{n_fuzzysets_list[0]}_{n_fuzzysets_list[1]}_R_{max_rules}"
+    data_description = "_allpower"
+    test_description = f"{data_description}_FS_{n_fuzzysets_list[0]}_{n_fuzzysets_list[1]}_R_{max_rules}"
 
     # Prepare data
     input_configs, output_config, Xt, yt, Xv, yv = prepare_data(n_fuzzysets_list)
@@ -174,7 +175,7 @@ def main():
         train_save_model(input_configs, output_config, Xt, yt, max_rules, test_description)
 
     # Load model and run prediction
-    load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description)
+    load_predict_model(Xv, yv, test_description)
 
 
 if __name__ == '__main__':
