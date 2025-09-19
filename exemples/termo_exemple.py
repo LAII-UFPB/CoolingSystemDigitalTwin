@@ -39,7 +39,7 @@ def prepare_data(n_fuzzysets_list):
     data_in, data_out = data_manager.get_data_in_out(verbose=True)
 
     # For quick testing, use only the first 5% of data
-    use_data_percentage = 0.05
+    use_data_percentage = 1
     nb_of_samples = int(data_in.shape[0] * use_data_percentage)
     print(f"Using only {nb_of_samples} of {data_in.shape[0]} samples")
     data_in = data_in[:nb_of_samples]
@@ -174,7 +174,7 @@ def main():
         train_save_model(input_configs, output_config, Xt, yt, max_rules, test_description)
 
     # Load model and run prediction
-    load_predict_model(Xv[:2000], yv[:2000], n_fuzzysets_list, max_rules, test_description)
+    load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description)
 
 
 if __name__ == '__main__':
