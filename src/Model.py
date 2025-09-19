@@ -15,7 +15,8 @@ class Model(ABC):
 
         os.makedirs(log_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(log_dir, f"{self.__class__.__name__}_{timestamp}.log")
+        self.log_name = f"{self.__class__.__name__}_{timestamp}.log"
+        log_file = os.path.join(log_dir, self.log_name)
 
         # Logger configs
         self.logger = logging.getLogger(self.__class__.__name__)
