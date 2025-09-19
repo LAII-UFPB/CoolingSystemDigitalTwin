@@ -3,6 +3,7 @@
 
 # this is the libraries I import to organize my tests
 import os
+import csv
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -96,7 +97,8 @@ def train_save_model(input_configs, output_config, Xt, yt, max_rules, test_descr
     model.save(os.path.join(path_to_save, model_name))
 
 
-def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description):
+def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description,
+                        csv_path=os.path.join("exemples","results.csv")):
     """
     Load model, run prediction and save error plots.
     """
@@ -108,6 +110,26 @@ def load_predict_model(Xv, yv, n_fuzzysets_list, max_rules, test_description):
     # Run prediction
     y_pred = model.predict(Xv)
     y_error = model.metrics.absolute_percentage_error(yv, y_pred)
+
+    # --- Compute metrics ---
+    mae = model.metrics.mean_absolute_error(yv, y_pred)
+    mape = model.metrics.mean_absolute_percentage_error(yv, y_pred)
+    rmse = model.metrics.root_mean_squared_error(yv, y_pred)
+    r2 = model.metrics.r2_score(yv, y_pred)
+
+    print(f"Metrics for {test_description}:")
+    print(f"MAE={mae:.4f}, MAPE={mape:.2f}%, RMSE={rmse:.4f}, R2={r2:.4f}")
+
+    # --- Save metrics to CSV ---
+    header = ["model_name", "MAE", "MAPE", "RMSE", "R2"]
+    row = [test_description, mae, mape, rmse, r2]
+
+    file_exists = os.path.isfile(csv_path)
+    with open(csv_path, mode="a", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:  # write header only once
+            writer.writerow(header)
+        writer.writerow(row)
 
     # Plot results
     fig, ax = plt.subplots(2, 1)
