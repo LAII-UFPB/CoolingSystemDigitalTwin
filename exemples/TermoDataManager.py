@@ -17,9 +17,9 @@ class TermoDataManager(DataManager):
             for col, thr in power_threshold_dict.items()
         ])
 
-        #power_df = power_df.with_columns([
-        #    pl.sum_horizontal(pl.all().alias("power_sum"))
-        #])
+        power_df = power_df.with_columns([
+            pl.sum_horizontal(pl.all().alias("power_sum"))
+        ])
 
         return power_df
     

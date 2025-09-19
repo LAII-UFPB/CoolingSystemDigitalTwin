@@ -164,7 +164,7 @@ def main():
 
     n_fuzzysets_list = args.n_fuzzysets
     max_rules = args.max_rules
-    data_description = "_allpower"
+    data_description = "_all_data"
     test_description = f"{data_description}_FS_{n_fuzzysets_list[0]}_{n_fuzzysets_list[1]}_R_{max_rules}"
 
     # Prepare data
